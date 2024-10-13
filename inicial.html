@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Landing Page</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/CSS/style.css">
+</head>
+<body>
+    <div class="header">
+        <img src="IMG/FAC.png" alt="Logo da Loja" class="logo">
+        <div class="search-container">
+            <div class="group">
+                <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+                    <g>
+                        <path d="M21.53 20.47l-3.66-3.66C19.195 15.24 20 13.214 20 11c0-4.97-4.03-9-9-9s-9 4.03-9 9 4.03 9 9 9c2.215 0 4.24-.804 5.808-2.13l3.66 3.66c.147.146.34.22.53.22s.385-.073.53-.22c.295-.293.295-.767.002-1.06zM3.5 11c0-4.135 3.365-7.5 7.5-7.5s7.5 3.365 7.5 7.5-3.365 7.5-7.5 7.5-7.5-3.365-7.5-7.5z"></path>
+                    </g>
+                </svg>
+                <input placeholder="Procurar" type="search" class="input">
+            </div>
+        </div>
+        <div class="icon-container">
+            <img src="IMG/coracao.png" alt="Curtidos" class="icones">
+            <a href="#" class="login-link">
+                <img src="IMG/perfil.png" alt="Perfil" class="icones">
+            </a>
+            <img src="IMG/carrinho.png" alt="Carrinho" class="icones" id="cartIcon">
+            <span id="cartCount" class="badge badge-pill badge-danger">0</span>
+        </div>
+    </div>
+    <div class="container product-list" id="productList">
+        <!-- Os produtos serão carregados dinamicamente aqui -->
+    </div>
+    <ul id="pagination" class="pagination"></ul>
+
+    <!-- Modal do Carrinho -->
+    <div class="cart-modal" id="cartModal">
+        <span class="close-btn" id="closeCartModal">&times;</span>
+        <h4>Carrinho de Compras</h4>
+        <div id="cartItems">
+            <!-- Os itens do carrinho serão carregados dinamicamente aqui -->
+        </div>
+        <div class="cart-total">
+            Subtotal: R$ <span id="cartSubtotal">0.00</span><br>
+            CEP: <input type="text" id="cepInput" placeholder="Digite seu CEP" oninput="calcularFrete()"><br>
+            Frete: R$ <span id="freteValue">0.00</span><br>
+            Total: R$ <span id="cartTotal">0.00</span>
+        </div>
+        <button class="btn btn-primary mt-3" onclick="finalizarCompra()">Finalizar Compra</button>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            const apiUrl = 'http://localhost:8080/produtos/ativos';
+            const imageApiUrl = 'http://localhost:8080/imagens/produto';
+            let currentPage = 1;
+            let totalPages = 1;
+            const token = localStorage.getItem('authToken'); // Supondo que o token esteja armazenado no localStorage
+
+            function fetchProducts(page = 1, searchTerm = '') {
+                $.ajax({
+                    url: apiUrl,
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    data: {
+                        nome: searchTerm,
+                        page: page - 1,
+                        size: 10
+                    },
+                    success: function(response) {
+                        renderProducts(response.content);
+                        totalPages = response.totalPages;
+                        renderPagination();
+                    },
+                    error: function(error) {
+                        console.error('Erro ao buscar produtos:', error);
+                    }
+                });
+            }
+
+            function fetchProductImages(productId, callback) {
+                console.log(`Carregando imagens do produto com ID: ${productId}`);
+                fetch(`http://localhost:8080/imagens/produto/${productId}`)
+                    .then(response => response.json())
+                    .then(imagens => {
+                        console.log('Imagens carregadas:', imagens);
+                        const imagemPrincipal = imagens.find(image => image.principal);
+                        const outrasImagens = imagens.filter(image => !image.principal);
+
+                        if (imagemPrincipal) {
+                            imagens = [imagemPrincipal, ...outrasImagens];
+                        }
+
+                        callback(imagens);
+                    })
+                    .catch(error => {
+                        console.error(`Erro ao buscar imagens do produto ${productId}:`, error);
+                        callback([]);
+                    });
+            }
+
+            function renderProducts(products) {
+                const productList = $('#productList');
+                productList.empty();
+                products.forEach(product => {
+                    fetchProductImages(product.id, function(images) {
+                        const carouselId = `carousel-${product.id}`;
+                        const carouselIndicators = images.map((image, index) => `
+                            <li data-target="#${carouselId}" data-slide-to="${index}" class="${index === 0 ? 'active' : ''}"></li>
+                        `).join('');
+                        const carouselItems = images.map((image, index) => `
+                            <div class="carousel-item ${index === 0 ? 'active' : ''}">
+                                <img src="http://localhost:8081/${image.caminho.split('\\').pop()}" class="d-block w-100" alt="Imagem do ${product.nome}">
+                            </div>
+                        `).join('');
+                        const productCard = `
+                            <div class="product-card">
+                                <div id="${carouselId}" class="carousel slide" data-ride="carousel">
+                                    <ol class="carousel-indicators">
+                                        ${carouselIndicators}
+                                    </ol>
+                                    <div class="carousel-inner">
+                                        ${carouselItems}
+                                    </div>
+                                    <a class="carousel-control-prev" href="#${carouselId}" role="button" data-slide="prev">
+                                        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                                        <span class="sr-only">Anterior</span>
+                                    </a>
+                                    <a class="carousel-control-next" href="#${carouselId}" role="button" data-slide="next">
+                                        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                                        <span class="sr-only">Próximo</span>
+                                    </a>
+                                </div>
+                                <h2>${product.nome}</h2>
+                                <p><strong>Preço:</strong> R$ ${product.preco.toFixed(2)}</p>
+                                <button class="buy-button" onclick="adicionarAoCarrinho(${product.id}, '${product.nome}', ${product.preco}, '${images[0].caminho}')">Comprar</button>
+                                <button class="details-button" onclick="viewProduct(${product.id})">Detalhes</button>
+                            </div>
+                        `;
+                        productList.append(productCard);
+                    });
+                });
+            }
+
+            function renderPagination() {
+                const pagination = $('#pagination');
+                pagination.empty();
+                for (let i = 1; i <= totalPages; i++) {
+                    const pageItem = `
+                        <li class="page-item ${i === currentPage ? 'active' : ''}">
+                            <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+                        </li>
+                    `;
+                    pagination.append(pageItem);
+                }
+            }
+
+            window.changePage = function(page) {
+                currentPage = page;
+                fetchProducts(currentPage, $('#searchInput').val());
+            };
+
+            window.viewProduct = function(productId) {
+                window.location.href = `visualizarProdutoCliente.html?id=${productId}`;
+            };
+
+            window.adicionarAoCarrinho = function(productId, nome, preco, imagem) {
+                const produto = { id: productId, nome: nome, preco: preco, imagem: imagem, quantidade: 1 };
+                let carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
+                const produtoExistente = carrinho.find(item => item.id === productId);
+
+                if (produtoExistente) {
+                    produtoExistente.quantidade += 1;
+                } else {
+                    carrinho.push(produto);
+                }
+
+                localStorage.setItem('carrinho', JSON.stringify(carrinho));
+                atualizarIndicadorCarrinho();
+                $('#cartModal').addClass('active'); // Abrir o modal do carrinho
+                carregarCarrinho();
+            };
+
+            window.removerDoCarrinho = function(productId) {
+                let carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
+                carrinho = carrinho.filter(item => item.id !== productId);
+                localStorage.setItem('carrinho', JSON.stringify(carrinho));
+                carregarCarrinho();
+                atualizarIndicadorCarrinho();
+            };
+
+            window.incrementarQuantidade = function(productId) {
+                let carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
+                const produto = carrinho.find(item => item.id === productId);
+                if (produto) {
+                    produto.quantidade += 1;
+                    localStorage.setItem('carrinho', JSON.stringify(carrinho));
+                    carregarCarrinho();
+                    atualizarIndicadorCarrinho();
+                }
+            };
+
+            window.decrementarQuantidade = function(productId) {
+                let carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
+                const produto = carrinho.find(item => item.id === productId);
+                if (produto && produto.quantidade > 1) {
+                    produto.quantidade -= 1;
+                    localStorage.setItem('carrinho', JSON.stringify(carrinho));
+                    carregarCarrinho();
+                    atualizarIndicadorCarrinho();
+                }
+            };
+
+            function calcularSubtotal() {
+                const cartItems = JSON.parse(localStorage.getItem('carrinho')) || [];
+                return cartItems.reduce((subtotal, item) => subtotal + (item.preco * item.quantidade), 0);
+            }
+
+            function determinarRegiao(cep) {
+                const cepPrefixo = parseInt(cep.substring(0, 2));
+                console.log(`CEP Prefixo: ${cepPrefixo}`); // Log para depuração
+                if (cepPrefixo >= 0 && cepPrefixo <= 29) {
+                    return 'regiao1';
+                } else if (cepPrefixo >= 30 && cepPrefixo <= 59) {
+                    return 'regiao2';
+                } else if (cepPrefixo >= 60 && cepPrefixo <= 99) {
+                    return 'regiao3';
+                } else {
+                    return 'desconhecido';
+                }
+            }
+
+            const valoresFrete = {
+                'regiao1': 10,
+                'regiao2': 20,
+                'regiao3': 30
+            };  
+
+            window.calcularFrete = function() {
+                let cep = document.getElementById('cepInput').value;
+                cep = cep.replace('-', ''); // Remove o hífen do CEP
+                console.log(`CEP: ${cep}`); // Log para depuração
+                if (cep.length === 8) { // Verifica se o CEP tem 8 dígitos
+                    const regiao = determinarRegiao(cep);
+                    console.log(`Região: ${regiao}`); // Log para depuração
+                    const valorFrete = valoresFrete[regiao] || 0;
+                    console.log(`Valor do Frete: ${valorFrete}`); // Log para depuração
+                    document.getElementById('freteValue').innerText = valorFrete.toFixed(2);
+                    atualizarTotal();
+                } else {
+                    document.getElementById('freteValue').innerText = '0.00';
+                    atualizarTotal();
+                }
+            }
+
+            function calcularTotal() {
+                const subtotal = calcularSubtotal();
+                const frete = parseFloat(document.getElementById('freteValue').innerText);
+                return subtotal + (isNaN(frete) ? 0 : frete);
+            }
+
+            function carregarCarrinho() {
+                const cartItems = JSON.parse(localStorage.getItem('carrinho')) || [];
+                const cartItemsContainer = document.getElementById('cartItems');
+                const cartSubtotalElement = document.getElementById('cartSubtotal');
+                const cartTotalElement = document.getElementById('cartTotal');
+                let cartTotal = 0;
+
+                cartItemsContainer.innerHTML = ''; // Limpar o conteúdo existente
+
+                let itemsProcessed = 0;
+
+                if (cartItems.length ===0) {
+                    cartSubtotalElement.innerText = cartTotal.toFixed(2);
+                    cartTotalElement.innerText = cartTotal.toFixed(2);
+                }
+
+                cartItems.forEach(item => {
+                    fetchProductImages(item.id, function(images) {
+                        const itemTotal = item.preco * item.quantidade;
+                        cartTotal += itemTotal;
+
+                        const cartItem = `
+                            <div class="cart-item">
+                                <div class="cart-item-details">
+                                    <img src="http://localhost:8081/${images[0].caminho.split('\\').pop()}" alt="Imagem do ${item.nome}">
+                                    <div class="cart-item-info">
+                                        <h5>${item.nome}</h5>
+                                        <p class="cart-item-price">R$ ${item.preco.toFixed(2)} x ${item.quantidade}</p>
+                                        <div class="quantity-controls">
+                                            <button class="btn btn-secondary btn-sm" onclick="decrementarQuantidade(${item.id})">-</button>
+                                            <span>${item.quantidade}</span>
+                                            <button class="btn btn-secondary btn-sm" onclick="incrementarQuantidade(${item.id})">+</button>
+                                        </div>
+                                        <button class="btn btn-danger btn-sm" onclick="removerDoCarrinho(${item.id})">Remover</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        cartItemsContainer.innerHTML += cartItem;
+
+                        itemsProcessed++;
+                        if (itemsProcessed === cartItems.length) {
+                            cartSubtotalElement.innerText = calcularSubtotal().toFixed(2);
+                            cartTotalElement.innerText = calcularTotal().toFixed(2);
+                        }
+                    });
+                });
+            }
+
+            function atualizarTotal() {
+                const cartTotalElement = document.getElementById('cartTotal');
+                cartTotalElement.innerText = calcularTotal().toFixed(2);
+            }
+
+            function atualizarIndicadorCarrinho() {
+                const carrinho = JSON.parse(localStorage.getItem('carrinho')) || [];
+                const totalItens = carrinho.reduce((total, item) => total + item.quantidade, 0);
+                document.getElementById('cartCount').innerText = totalItens;
+            }
+
+            window.finalizarCompra = function() {
+                const cep = document.getElementById('cepInput').value;
+                calcularFrete(); // Chama a função calcularFrete para garantir que o frete seja atualizado
+                const frete = parseFloat(document.getElementById('freteValue').innerText);
+                alert(`Compra finalizada com sucesso! Frete: R$ ${frete.toFixed(2)}`);
+                localStorage.removeItem('carrinho');
+                carregarCarrinho();
+                atualizarIndicadorCarrinho();
+            };
+
+            $('#cartIcon').click(function() {
+                $('#cartModal').toggleClass('active');
+                carregarCarrinho();
+            });
+
+            $('#closeCartModal').click(function() {
+                $('#cartModal').removeClass('active');
+            });
+
+            fetchProducts();
+            atualizarIndicadorCarrinho();
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
